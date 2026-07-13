@@ -8,13 +8,13 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import ph.edu.dlsu.lbycpob.gradetrackerwebapp.dto.ClassStatsResult;
 import ph.edu.dlsu.lbycpob.gradetrackerwebapp.dto.IDVerifyFormDTO;
-import ph.edu.dlsu.lbycpob.gradetracker.dto.StudentFormDTO;
-import ph.edu.dlsu.lbycpob.gradetracker.model.Student;
-import ph.edu.dlsu.lbycpob.gradetracker.service.GradeService;
-import ph.edu.dlsu.lbycpob.gradetracker.service.StudentSessionRepository;
-import ph.edu.dlsu.lbycpob.gradetracker.util.GradeCalculator;
-import ph.edu.dlsu.lbycpob.gradetracker.util.GradeConstants;
-import ph.edu.dlsu.lbycpob.gradetracker.util.IDVerifier;
+import ph.edu.dlsu.lbycpob.gradetrackerwebapp.dto.StudentFormDTO;
+import ph.edu.dlsu.lbycpob.gradetrackerwebapp.model.Student;
+import ph.edu.dlsu.lbycpob.gradetrackerwebapp.service.GradeService;
+import ph.edu.dlsu.lbycpob.gradetrackerwebapp.service.StudentSessionRepository;
+import ph.edu.dlsu.lbycpob.gradetrackerwebapp.util.GradeCalculator;
+import ph.edu.dlsu.lbycpob.gradetrackerwebapp.util.GradeConstants;
+import ph.edu.dlsu.lbycpob.gradetrackerwebapp.util.IDVerifier;
 
 
 import java.util.List;
@@ -157,4 +157,80 @@ public class GradeController {
         return "report";
     }
 
+    // =====================================================================
+    // GET /stats   -- Class statistics
+    //                (was ReportPrinter.printClassStats(repo))
+    // =====================================================================
+    @GetMapping("/stats")
+    public String viewStats(Model model) {
+        List<Student> students = repo.getAllStudents();
 
+        if (students.isEmpty()) {
+            model.addAttribute("hasData", false);
+            return "stats";
+        }
+
+        // Mirrors the seeding and loop in ReportPrinter.printClassStats()
+        double highest      = students.getFirst().getRawGrade();
+        double lowest       = students.getFirst().getRawGrade();
+        double sum          = students.getFirst().getRawGrade();
+        int    highestIndex = 0;
+        int    lowestIndex  = 0;
+
+        for (int i = 1; i < students.size(); i++) {
+            double g = students.get(i).getRawGrade();
+            sum += g;
+            if (g > highest) { highest = g; highestIndex = i; }
+            if (g < lowest)  { lowest  = g; lowestIndex  = i; }
+        }
+
+        double classMean = sum / students.size();
+
+        ClassStatsResult stats = new ClassStatsResult();
+        stats.setTotalStudents(students.size());
+        stats.setHighestName(students.get(highestIndex).getName());
+        stats.setHighestGrade(highest);
+        stats.setHighestRank(GradeCalculator.assignLetterRank(highest));
+        stats.setLowestName(students.get(lowestIndex).getName());
+        stats.setLowestGrade(lowest);
+        stats.setLowestRank(GradeCalculator.assignLetterRank(lowest));
+        stats.setClassMean(classMean);
+        stats.setMeanRank(GradeCalculator.assignLetterRank(classMean));
+
+        model.addAttribute("stats",   stats);
+        model.addAttribute("hasData", true);
+        return "stats";
+    }
+
+    // =====================================================================
+    // GET /verify   -- Show the ID verification form
+    //                  (was menu option 4 -> IDVerifier.verifyID())
+    // =====================================================================
+    @GetMapping("/verify")
+    public String showVerifyForm(Model model) {
+        if (!model.containsAttribute("verifyForm")) {
+            model.addAttribute("verifyForm", new IDVerifyFormDTO());
+        }
+        return "verify-id";
+    }
+
+    // =====================================================================
+    // POST /verify   -- Process ID and display result
+    // =====================================================================
+    @PostMapping("/verify")
+    public String verifyId(@Valid @ModelAttribute("verifyForm") IDVerifyFormDTO dto,
+                           BindingResult bindingResult,
+                           RedirectAttributes redirectAttrs) {
+        if (bindingResult.hasErrors()) {
+            return "verify-id";
+        }
+
+        String result = gradeService.verifyIdNumber(dto.getIdNumber());
+        redirectAttrs.addFlashAttribute("verifyResult", result);
+        redirectAttrs.addFlashAttribute("verifiedId",   dto.getIdNumber());
+        redirectAttrs.addFlashAttribute("isValid",
+                !result.startsWith("Invalid"));
+        redirectAttrs.addFlashAttribute("verifyForm",   new IDVerifyFormDTO());
+        return "redirect:/verify";
+    }
+}
