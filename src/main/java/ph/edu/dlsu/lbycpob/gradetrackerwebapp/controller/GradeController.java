@@ -87,4 +87,74 @@ public class GradeController {
         return "enter-students";
     }
 
+    // =====================================================================
+    // POST /students/add   -- Submit one student's data
+    //                         (was inputOneStudent() + repo.addStudent())
+    // =====================================================================
+    @PostMapping("/students/add")
+    public String addStudent(@Valid @ModelAttribute("studentForm") StudentFormDTO dto,
+                             BindingResult bindingResult,
+                             RedirectAttributes redirectAttrs,
+                             Model model) {
+        // Layer 1: Bean Validation (field-level annotations on StudentFormDTO)
+        // Layer 2: ID semantic check via IDVerifier
+        if (!bindingResult.hasErrors()) {
+            String idResult = IDVerifier.validateID(dto.getIdNumber());
+            if (idResult.startsWith("Invalid")) {
+                bindingResult.rejectValue("idNumber", "id.invalid", idResult);
+            }
+        }
+        if (bindingResult.hasErrors()) {
+            // Re-populate model and re-render the form with error messages
+            model.addAttribute("students",     repo.getAllStudents());
+            model.addAttribute("studentCount", repo.getCount());
+            model.addAttribute("maxStudents",  GradeConstants.MAX_STUDENTS);
+            model.addAttribute("repoFull",     repo.isFull());
+            model.addAttribute("numModules",   GradeConstants.NUM_MODULES);
+            model.addAttribute("minScore",     GradeConstants.MIN_SCORE);
+            model.addAttribute("maxScore",     GradeConstants.MAX_SCORE);
+            return "enter-students";
+        }
+
+        if (repo.isFull()) {
+            redirectAttrs.addFlashAttribute("errorMessage",
+                    "Maximum of " + GradeConstants.MAX_STUDENTS
+                            + " students reached. Clear data to start over.");
+            return "redirect:/students/enter";
+        }
+
+        Student student = gradeService.buildStudent(dto);
+        repo.addStudent(student);
+
+        redirectAttrs.addFlashAttribute("successMessage",
+                "Student \"" + student.getName() + "\" added successfully.");
+        return "redirect:/students/enter";
+    }
+
+    // =====================================================================
+    // POST /students/clear   -- Reset session data (like restarting the app)
+    // =====================================================================
+    @PostMapping("/students/clear")
+    public String clearStudents(RedirectAttributes redirectAttrs) {
+        repo.clear();
+        redirectAttrs.addFlashAttribute("successMessage",
+                "All student data cleared.");
+        return "redirect:/";
+    }
+    // =====================================================================
+    // GET /report   -- Grade report table
+    //                  (was ReportPrinter.printReport(repo))
+    // =====================================================================
+    @GetMapping("/report")
+    public String viewReport(Model model) {
+        List<Student> students = repo.getAllStudents();
+        model.addAttribute("students", students);
+        model.addAttribute("hasData",  !students.isEmpty());
+
+        // Provide GradeCalculator reference for the template to call getRemarks
+        // (Thymeleaf cannot call static methods directly, so we precompute remarks)
+        // The remarks are computed in the template via a helper approach below.
+        return "report";
+    }
+
 
